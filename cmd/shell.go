@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"going/utils"
+	"going/internal"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
@@ -61,7 +61,7 @@ func run(_ *cobra.Command, _ []string) {
 	shell.Stderr = os.Stderr
 	shell.Stdin = os.Stdin
 	err = shell.Run()
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 }
 
 func init() {
@@ -72,8 +72,9 @@ func init() {
 }
 
 func preRun(_ *cobra.Command, _ []string) {
-	cfg, err := utils.GetAwsConfig(ctx, awsProfile)
-	utils.CheckErr(err)
+	profile, _ := awsConfig.GetProfile(awsProfile)
+	cfg, err := internal.BuildAWSConfig(ctx, profile)
+	internal.CheckErr(err)
 
 	if cluster == "" {
 		cluster = promptForCluster(cfg)
@@ -92,7 +93,7 @@ func preRun(_ *cobra.Command, _ []string) {
 func promptForCluster(cfg aws.Config) string {
 	svc := ecs.NewFromConfig(cfg)
 	output, err := svc.ListClusters(ctx, &ecs.ListClustersInput{})
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 
 	var clusters []string
 	for _, arn := range output.ClusterArns {
@@ -101,9 +102,9 @@ func promptForCluster(cfg aws.Config) string {
 	}
 
 	// sort.Strings(clusters)
-	prompt := promptui.Select{Label: "Select a cluster", Items: clusters, Stdout: utils.NoBellStdout}
+	prompt := promptui.Select{Label: "Select a cluster", Items: clusters, Stdout: internal.NoBellStdout}
 	_, result, err := prompt.Run()
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 	return result
 }
 
@@ -114,7 +115,7 @@ func promptForService(cfg aws.Config) string {
 			Cluster: aws.String(cluster),
 		},
 	)
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 
 	var services []string
 	for _, a := range output.ServiceArns {
@@ -123,9 +124,9 @@ func promptForService(cfg aws.Config) string {
 	}
 
 	// sort.Strings(services)
-	prompt := promptui.Select{Label: "Select a service", Items: services, Stdout: utils.NoBellStdout}
+	prompt := promptui.Select{Label: "Select a service", Items: services, Stdout: internal.NoBellStdout}
 	_, result, err := prompt.Run()
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 	return result
 }
 
@@ -137,7 +138,7 @@ func getTaskArn(cfg aws.Config) string {
 			ServiceName: aws.String(service),
 		},
 	)
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 
 	return result.TaskArns[0]
 }
@@ -150,7 +151,7 @@ func promptForContainer(cfg aws.Config) string {
 			Tasks:   []string{taskArn},
 		},
 	)
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 
 	var tasks []string
 	for _, c := range output.Tasks[0].Containers {
@@ -158,8 +159,8 @@ func promptForContainer(cfg aws.Config) string {
 	}
 
 	sort.Strings(tasks)
-	prompt := promptui.Select{Label: "Select a container", Items: tasks, Stdout: utils.NoBellStdout}
+	prompt := promptui.Select{Label: "Select a container", Items: tasks, Stdout: internal.NoBellStdout}
 	_, result, err := prompt.Run()
-	utils.CheckErr(err)
+	internal.CheckErr(err)
 	return result
 }

@@ -6,14 +6,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"going/utils"
+	"going/internal"
 )
 
 var (
 	envOut bool
 )
 
-type AwsCreds struct {
+type awsCreds struct {
 	AccessKey string `json:"access_key"`
 	SecretKey string `json:"secret_key"`
 	Token     string `json:"token"`
@@ -24,24 +24,25 @@ var credsCmd = &cobra.Command{
 	Use:   "creds",
 	Short: "Get AWS SSO credentials",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := utils.GetAwsConfig(ctx, awsProfile)
-		utils.CheckErr(err)
+		profile, _ := awsConfig.GetProfile(awsProfile)
+		cfg, err := internal.BuildAWSConfig(ctx, profile)
+		internal.CheckErr(err)
 
 		c, err := cfg.Credentials.Retrieve(ctx)
-		utils.CheckErr(err)
+		internal.CheckErr(err)
 
 		if envOut {
 			fmt.Printf("AWS_ACCESS_KEY_ID=\"%s\"\n"+
 				"AWS_SECRET_ACCESS_KEY=\"%s\"\n"+
 				"AWS_SESSION_TOKEN=\"%s\"\n", c.AccessKeyID, c.SecretAccessKey, c.SessionToken)
 		} else {
-			creds := AwsCreds{
+			creds := awsCreds{
 				AccessKey: c.AccessKeyID,
 				SecretKey: c.SecretAccessKey,
 				Token:     c.SessionToken,
 			}
 			m, err := json.Marshal(creds)
-			utils.CheckErr(err)
+			internal.CheckErr(err)
 			fmt.Println(string(m))
 		}
 	},
