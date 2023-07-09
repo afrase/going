@@ -31,6 +31,9 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "shell",
 		Short: "Open a shell on a node in ECS",
+		PreRun: func(cmd *cobra.Command, args []string) {
+			opts.client = ecs.NewFromConfig(f.Config())
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			// Must be logged in
 			err := internal.CheckSSOLogin(f)
@@ -50,7 +53,7 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 			}
 
 			fmt.Printf("cluster: %s service: %s container: %s\n", opts.Cluster, opts.Service, opts.Container)
-			yes := f.Prompt.YesNoPrompt("Connect to the above instance")
+			yes := f.Prompt.YesNoPrompt("Connect to the above container")
 			if !yes {
 				return
 			}
@@ -69,9 +72,6 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 			shell.Stdin = os.Stdin
 			err = shell.Run()
 			utils.CheckErr(err)
-		},
-		PreRun: func(cmd *cobra.Command, args []string) {
-			opts.client = ecs.NewFromConfig(f.Config())
 		},
 	}
 
@@ -127,7 +127,24 @@ func getTaskArn(f *factory.Factory) string {
 	})
 	utils.CheckErr(err)
 
-	return result.TaskArns[0]
+	if len(result.TaskArns) > 0 {
+		return result.TaskArns[0]
+	}
+
+	yes := f.Prompt.YesNoPrompt("No tasks running. Start one")
+	if yes {
+		_, err = opts.client.UpdateService(f.Context, &ecs.UpdateServiceInput{
+			Cluster:      aws.String(opts.Cluster),
+			Service:      aws.String(opts.Service),
+			DesiredCount: aws.Int32(1),
+		})
+		utils.CheckErr(err)
+
+		fmt.Println("Set desired count of service to 1")
+	}
+
+	os.Exit(1)
+	return "" // won't reach
 }
 
 func promptForContainer(f *factory.Factory) string {

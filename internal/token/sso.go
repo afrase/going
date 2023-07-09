@@ -22,7 +22,8 @@ type SSOToken struct {
 	ClientId              string    `json:"clientId"`
 	ClientSecret          string    `json:"clientSecret"`
 	RegistrationExpiresAt time.Time `json:"registrationExpiresAt"`
-	filename              string
+
+	filename string
 }
 
 func (s *SSOToken) IsExpired() bool {
