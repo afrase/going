@@ -83,16 +83,17 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 }
 
 func promptForCluster(f *factory.Factory) string {
-	result, err := opts.client.ListClusters(f.Context, &ecs.ListClustersInput{
-		MaxResults: aws.Int32(100),
-	})
-	utils.CheckErr(err)
+	pager := ecs.NewListClustersPaginator(opts.client, &ecs.ListClustersInput{})
 
 	var clusters []string
-	for _, arn := range result.ClusterArns {
-		parts := strings.Split(arn, "/")
-		if cluster, ok := utils.Last(parts); ok {
-			clusters = append(clusters, cluster)
+	for pager.HasMorePages() {
+		result, err := pager.NextPage(f.Context)
+		utils.CheckErr(err)
+		for _, arn := range result.ClusterArns {
+			parts := strings.Split(arn, "/")
+			if cluster, ok := utils.Last(parts); ok {
+				clusters = append(clusters, cluster)
+			}
 		}
 	}
 
@@ -100,17 +101,19 @@ func promptForCluster(f *factory.Factory) string {
 }
 
 func promptForService(f *factory.Factory) string {
-	result, err := opts.client.ListServices(f.Context, &ecs.ListServicesInput{
-		Cluster:    aws.String(opts.Cluster),
-		MaxResults: aws.Int32(100),
+	pager := ecs.NewListServicesPaginator(opts.client, &ecs.ListServicesInput{
+		Cluster: aws.String(opts.Cluster),
 	})
-	utils.CheckErr(err)
 
 	var services []string
-	for _, a := range result.ServiceArns {
-		parts := strings.Split(a, "/")
-		if service, ok := utils.Last(parts); ok {
-			services = append(services, service)
+	for pager.HasMorePages() {
+		result, err := pager.NextPage(f.Context)
+		utils.CheckErr(err)
+		for _, a := range result.ServiceArns {
+			parts := strings.Split(a, "/")
+			if service, ok := utils.Last(parts); ok {
+				services = append(services, service)
+			}
 		}
 	}
 
@@ -121,7 +124,6 @@ func getTaskArn(f *factory.Factory) string {
 	result, err := opts.client.ListTasks(f.Context, &ecs.ListTasksInput{
 		Cluster:     aws.String(opts.Cluster),
 		ServiceName: aws.String(opts.Service),
-		MaxResults:  aws.Int32(100),
 	})
 	utils.CheckErr(err)
 
