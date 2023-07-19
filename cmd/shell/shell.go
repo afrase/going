@@ -4,25 +4,26 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/lithammer/fuzzysearch/fuzzy"
 	"github.com/spf13/cobra"
 
 	"going/internal"
+	"going/internal/client"
 	"going/internal/factory"
 	"going/internal/utils"
 )
 
 type shellOptions struct {
-	Cluster   string
-	Service   string
-	Container string
-	TaskARN   string
+	ClusterInput   string
+	ServiceInput   string
+	ContainerInput string
 
-	client *ecs.Client
+	ContainerDetails client.Container
+
+	client *client.AWSClient
 }
 
 var opts = &shellOptions{}
@@ -32,38 +33,42 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 		Use:   "shell",
 		Short: "Open a shell on a node in ECS",
 		PreRun: func(cmd *cobra.Command, args []string) {
-			opts.client = ecs.NewFromConfig(f.Config())
+			opts.client = client.New(f.Context, f.Config())
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			// Must be logged in
 			err := internal.CheckSSOLogin(f)
 			utils.CheckErr(err)
 
-			if opts.Cluster == "" {
-				opts.Cluster = promptForCluster(f)
-			}
-			if opts.Service == "" {
-				opts.Service = promptForService(f)
+			if opts.ClusterInput == "" {
+				opts.ClusterInput = promptForCluster(f)
 			}
 
-			opts.TaskARN = getTaskArn(f)
-
-			if opts.Container == "" {
-				opts.Container = promptForContainer(f)
+			if opts.ServiceInput == "" {
+				opts.ServiceInput = promptForService(f)
 			}
 
-			fmt.Printf("cluster: %s service: %s container: %s\n", opts.Cluster, opts.Service, opts.Container)
+			taskARN := getTaskArn(f)
+			getContainerDetails(f, taskARN)
+
+			fmt.Printf("cluster: %s service: %s container: %s\n",
+				opts.ClusterInput, opts.ServiceInput, opts.ContainerDetails.Name)
+
 			yes := f.Prompt.YesNoPrompt("Connect to the above container")
 			if !yes {
 				return
 			}
 
+			// taskId, _ := utils.Last(strings.Split(opts.TaskARN, "/"))
+			// target := fmt.Sprintf("ecs:%s_%s_%s", opts.ClusterInput, taskId, aws.ToString(opts.ContainerDetails.RuntimeId))
+			// err = ssmclient.ShellPluginSession(f.Config(), target)
+			// utils.CheckErr(err)
 			shell := exec.Command("aws",
 				"ecs", "execute-command",
 				"--profile", f.ProfileName,
-				"--task", opts.TaskARN,
-				"--cluster", opts.Cluster,
-				"--container", opts.Container,
+				"--task", opts.ContainerDetails.TaskARN,
+				"--cluster", opts.ContainerDetails.ClusterARN,
+				"--container", opts.ContainerDetails.Name,
 				"--command", "\"/bin/bash\"",
 				"--interactive",
 			)
@@ -75,90 +80,85 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.Cluster, "cluster", "c", "", "ECS cluster")
-	cmd.Flags().StringVarP(&opts.Service, "service", "s", "", "ECS service")
-	cmd.Flags().StringVarP(&opts.Container, "container", "r", "", "ECS container")
+	cmd.Flags().StringVarP(&opts.ClusterInput, "cluster", "c", "", "ECS cluster")
+	cmd.Flags().StringVarP(&opts.ServiceInput, "service", "s", "", "ECS service")
+	cmd.Flags().StringVarP(&opts.ContainerInput, "container", "r", "", "ECS container")
 
 	return cmd
 }
 
 func promptForCluster(f *factory.Factory) string {
-	pager := ecs.NewListClustersPaginator(opts.client, &ecs.ListClustersInput{})
+	c, err := opts.client.ListClusters()
+	utils.CheckErr(err)
 
 	var clusters []string
-	for pager.HasMorePages() {
-		result, err := pager.NextPage(f.Context)
-		utils.CheckErr(err)
-		for _, arn := range result.ClusterArns {
-			parts := strings.Split(arn, "/")
-			if cluster, ok := utils.Last(parts); ok {
-				clusters = append(clusters, cluster)
-			}
-		}
+	for _, cluster := range c {
+		clusters = append(clusters, cluster.Name)
 	}
 
 	return f.Prompt.Select("Select a cluster", clusters)
 }
 
 func promptForService(f *factory.Factory) string {
-	pager := ecs.NewListServicesPaginator(opts.client, &ecs.ListServicesInput{
-		Cluster: aws.String(opts.Cluster),
-	})
+	s, err := opts.client.ListServices(opts.ClusterInput)
+	utils.CheckErr(err)
 
 	var services []string
-	for pager.HasMorePages() {
-		result, err := pager.NextPage(f.Context)
-		utils.CheckErr(err)
-		for _, a := range result.ServiceArns {
-			parts := strings.Split(a, "/")
-			if service, ok := utils.Last(parts); ok {
-				services = append(services, service)
-			}
-		}
+	for _, service := range s {
+		services = append(services, service.Name)
 	}
 
 	return f.Prompt.Select("Select a service", services)
 }
 
 func getTaskArn(f *factory.Factory) string {
-	result, err := opts.client.ListTasks(f.Context, &ecs.ListTasksInput{
-		Cluster:     aws.String(opts.Cluster),
-		ServiceName: aws.String(opts.Service),
-	})
+	t, err := opts.client.ListTasks(opts.ClusterInput, opts.ServiceInput)
 	utils.CheckErr(err)
 
-	if len(result.TaskArns) > 0 {
-		return result.TaskArns[0]
+	if len(t) > 0 {
+		return t[0]
 	}
 
 	yes := f.Prompt.YesNoPrompt("No tasks running. Start one")
 	if yes {
-		_, err = opts.client.UpdateService(f.Context, &ecs.UpdateServiceInput{
-			Cluster:      aws.String(opts.Cluster),
-			Service:      aws.String(opts.Service),
+		err = opts.client.UpdateService(&ecs.UpdateServiceInput{
+			Cluster:      aws.String(opts.ClusterInput),
+			Service:      aws.String(opts.ServiceInput),
 			DesiredCount: aws.Int32(1),
 		})
 		utils.CheckErr(err)
 
-		fmt.Println("Set desired count of service to 1")
+		fmt.Println("Set desired count of service to 1. Could take a few minutes to start.")
 	}
 
 	os.Exit(1)
 	return "" // won't reach
 }
 
-func promptForContainer(f *factory.Factory) string {
-	result, err := opts.client.DescribeTasks(f.Context, &ecs.DescribeTasksInput{
-		Cluster: aws.String(opts.Cluster),
-		Tasks:   []string{opts.TaskARN},
-	})
-	utils.CheckErr(err)
+func getContainerDetails(f *factory.Factory, taskARN string) {
+	var details client.Container
 
-	var tasks []string
-	for _, c := range result.Tasks[0].Containers {
-		tasks = append(tasks, aws.ToString(c.Name))
+	if opts.ContainerInput == "" {
+		containers, err := opts.client.DescribeContainers(opts.ClusterInput, taskARN)
+		utils.CheckErr(err)
+		i := f.Prompt.CustomSelect("Select a container", containers, utils.ContainerTemplate, containerSearch(containers))
+		details = containers[i]
+	} else {
+		c, err := opts.client.DescribeContainer(opts.ClusterInput, taskARN, opts.ContainerInput)
+		utils.CheckErr(err)
+		details = c
 	}
 
-	sort.Strings(tasks)
-	return f.Prompt.Select("Select a container", tasks)
+	opts.ContainerDetails = details
+	opts.ContainerInput = details.Name
+}
+
+func containerSearch(containers []client.Container) func(input string, index int) bool {
+	return func(input string, index int) bool {
+		item := containers[index]
+		if fuzzy.MatchFold(input, item.Name) {
+			return true
+		}
+		return false
+	}
 }

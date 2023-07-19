@@ -2,11 +2,14 @@ package utils
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+	"text/template"
 
 	"github.com/chzyer/readline"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"github.com/manifoldco/promptui"
+	"github.com/manifoldco/promptui/list"
 )
 
 // noBellStdout disabled readline's annoying terminal bell.
@@ -25,16 +28,33 @@ func (n *noBellStdout) Close() error {
 
 type Prompt interface {
 	Select(label string, items []string) (value string)
+	CustomSelect(label string, items interface{}, tmpl *promptui.SelectTemplates, searcher list.Searcher) (index int)
 	YesNoPrompt(label string) bool
 }
 
 type Prompter struct{}
 
+var funcMap = template.FuncMap{
+	"deref": func(i *string) string { return *i },
+}
+
+var ContainerTemplate = &promptui.SelectTemplates{
+	Label:    fmt.Sprintf("%s {{ .Name }}: ", promptui.IconInitial),
+	Active:   fmt.Sprintf("%s {{ .Name | underline }}", promptui.IconSelect),
+	Inactive: "  {{ .Name }}",
+	Selected: fmt.Sprintf(`{{ "%s" | green }} {{ .Name | faint }}`, promptui.IconGood),
+	FuncMap:  funcMap,
+}
+
+func init() {
+	mergeFuncMap(&funcMap, &promptui.FuncMap)
+}
+
 func (p Prompter) Select(label string, items []string) string {
 	prompt := promptui.Select{
 		Label:             label,
 		Items:             items,
-		Searcher:          fuzzySearch(items),
+		Searcher:          fuzzyStringSearch(items),
 		StartInSearchMode: true,
 		Stdout:            &noBellStdout{},
 	}
@@ -43,6 +63,21 @@ func (p Prompter) Select(label string, items []string) string {
 	CheckErr(err)
 
 	return result
+}
+
+func (p Prompter) CustomSelect(label string, items interface{}, tmpl *promptui.SelectTemplates, searcher list.Searcher) int {
+	prompt := promptui.Select{
+		Label:             label,
+		Items:             items,
+		Templates:         tmpl,
+		Searcher:          searcher,
+		StartInSearchMode: true,
+		Stdout:            &noBellStdout{},
+	}
+	i, _, err := prompt.Run()
+	CheckErr(err)
+
+	return i
 }
 
 func (p Prompter) YesNoPrompt(label string) bool {
@@ -68,12 +103,18 @@ func (p Prompter) YesNoPrompt(label string) bool {
 	}
 }
 
-func fuzzySearch(itemsToSelect []string) func(input string, index int) bool {
+func fuzzyStringSearch(itemsToSelect []string) func(input string, index int) bool {
 	return func(input string, index int) bool {
 		item := itemsToSelect[index]
 		if fuzzy.MatchFold(input, item) {
 			return true
 		}
 		return false
+	}
+}
+
+func mergeFuncMap(a *template.FuncMap, b *template.FuncMap) {
+	for k, v := range *b {
+		(*a)[k] = v
 	}
 }
