@@ -4,9 +4,17 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/session-manager-plugin/src/datachannel"
+	"github.com/aws/session-manager-plugin/src/log"
+	"github.com/aws/session-manager-plugin/src/sessionmanagerplugin/session"
+	_ "github.com/aws/session-manager-plugin/src/sessionmanagerplugin/session/portsession"
+	_ "github.com/aws/session-manager-plugin/src/sessionmanagerplugin/session/shellsession"
+	"github.com/google/uuid"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"github.com/spf13/cobra"
 
@@ -20,6 +28,7 @@ type shellOptions struct {
 	ClusterInput   string
 	ServiceInput   string
 	ContainerInput string
+	UseSSM         bool
 
 	ContainerDetails client.Container
 
@@ -59,30 +68,18 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 				return
 			}
 
-			// taskId, _ := utils.Last(strings.Split(opts.TaskARN, "/"))
-			// target := fmt.Sprintf("ecs:%s_%s_%s", opts.ClusterInput, taskId, aws.ToString(opts.ContainerDetails.RuntimeId))
-			// err = ssmclient.ShellPluginSession(f.Config(), target)
-			// utils.CheckErr(err)
-			shell := exec.Command("aws",
-				"ecs", "execute-command",
-				"--profile", f.ProfileName,
-				"--task", opts.ContainerDetails.TaskARN,
-				"--cluster", opts.ContainerDetails.ClusterARN,
-				"--container", opts.ContainerDetails.Name,
-				"--command", "\"/bin/bash\"",
-				"--interactive",
-			)
-			shell.Stdout = os.Stdout
-			shell.Stderr = os.Stderr
-			shell.Stdin = os.Stdin
-			err = shell.Run()
-			utils.CheckErr(err)
+			if opts.UseSSM {
+				executeCmdDirectly(f)
+			} else {
+				executeCmdUsingCLI(f)
+			}
 		},
 	}
 
 	cmd.Flags().StringVarP(&opts.ClusterInput, "cluster", "c", "", "ECS cluster")
 	cmd.Flags().StringVarP(&opts.ServiceInput, "service", "s", "", "ECS service")
 	cmd.Flags().StringVarP(&opts.ContainerInput, "container", "r", "", "ECS container")
+	cmd.Flags().BoolVar(&opts.UseSSM, "ssm", false, "Use the session manager directly")
 
 	return cmd
 }
@@ -161,4 +158,46 @@ func containerSearch(containers []client.Container) func(input string, index int
 		}
 		return false
 	}
+}
+
+func executeCmdUsingCLI(f *factory.Factory) {
+	shell := exec.Command("aws",
+		"ecs", "execute-command",
+		"--profile", f.ProfileName,
+		"--task", opts.ContainerDetails.TaskARN,
+		"--cluster", opts.ContainerDetails.ClusterARN,
+		"--container", opts.ContainerDetails.Name,
+		"--command", "\"/bin/bash\"",
+		"--interactive",
+	)
+	shell.Stdout = os.Stdout
+	shell.Stderr = os.Stderr
+	shell.Stdin = os.Stdin
+	utils.CheckErr(shell.Run())
+}
+
+func executeCmdDirectly(f *factory.Factory) {
+	taskId, _ := utils.Last(strings.Split(opts.ContainerDetails.TaskARN, "/"))
+	target := fmt.Sprintf("ecs:%s_%s_%s", opts.ClusterInput, taskId, opts.ContainerDetails.RuntimeID)
+
+	ssmClient := ssm.NewFromConfig(f.Config())
+	out, err := ssmClient.StartSession(f.Context, &ssm.StartSessionInput{Target: aws.String(target)})
+	utils.CheckErr(err)
+
+	ep, err := ssm.NewDefaultEndpointResolver().ResolveEndpoint(f.Config().Region, ssm.EndpointResolverOptions{})
+
+	clientID := uuid.NewString()
+	l := log.Logger(false, clientID)
+	ssmSession := session.Session{
+		SessionId:   aws.ToString(out.SessionId),
+		StreamUrl:   aws.ToString(out.StreamUrl),
+		TokenValue:  aws.ToString(out.TokenValue),
+		Endpoint:    ep.URL,
+		ClientId:    clientID,
+		TargetId:    target,
+		DataChannel: &datachannel.DataChannel{},
+	}
+
+	err = ssmSession.Execute(l)
+	utils.CheckErr(err)
 }
