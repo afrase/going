@@ -11,6 +11,8 @@ import (
 	"going/internal/utils"
 )
 
+const ecsTargetFormat = "ecs:%s_%s_%s"
+
 type AWSClient struct {
 	ctx       context.Context
 	ecsClient *ecs.Client
@@ -27,17 +29,19 @@ type Service struct {
 }
 
 type Task struct {
-	ARN        string
-	ClusterARN string
-	Containers []Container
+	ARN         string
+	ClusterARN  string
+	ClusterName string
+	Containers  []Container
 }
 
 type Container struct {
-	Name       string
-	ARN        string
-	ClusterARN string
-	TaskARN    string
-	RuntimeID  string
+	Name        string
+	ARN         string
+	ClusterARN  string
+	ClusterName string
+	TaskARN     string
+	RuntimeID   string
 }
 
 func New(ctx context.Context, cfg aws.Config) *AWSClient {
@@ -58,9 +62,9 @@ func (c *AWSClient) ListClusters() ([]Cluster, error) {
 			return nil, err
 		}
 
-		for _, arn := range result.ClusterArns {
-			if cluster, ok := utils.Last(strings.Split(arn, "/")); ok {
-				clusters = append(clusters, Cluster{ARN: arn, Name: cluster})
+		for _, a := range result.ClusterArns {
+			if name, ok := utils.Last(strings.Split(a, "/")); ok {
+				clusters = append(clusters, Cluster{ARN: a, Name: name})
 			}
 		}
 	}
@@ -81,9 +85,9 @@ func (c *AWSClient) ListServices(cluster string) ([]Service, error) {
 			return nil, err
 		}
 
-		for _, arn := range result.ServiceArns {
-			if service, ok := utils.Last(strings.Split(arn, "/")); ok {
-				services = append(services, Service{ARN: arn, Name: service})
+		for _, a := range result.ServiceArns {
+			if name, ok := utils.Last(strings.Split(a, "/")); ok {
+				services = append(services, Service{ARN: a, Name: name})
 			}
 		}
 	}
@@ -105,8 +109,8 @@ func (c *AWSClient) ListTasks(cluster string, service string) ([]string, error) 
 			return nil, err
 		}
 
-		for _, arn := range result.TaskArns {
-			tasks = append(tasks, arn)
+		for _, a := range result.TaskArns {
+			tasks = append(tasks, a)
 		}
 	}
 
@@ -125,18 +129,21 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 
 	var tasks []Task
 	for _, task := range result.Tasks {
+		clusterName, _ := utils.Last(strings.Split(aws.ToString(task.ClusterArn), "/"))
 		t := Task{
-			ARN:        aws.ToString(task.TaskArn),
-			ClusterARN: aws.ToString(task.ClusterArn),
+			ARN:         aws.ToString(task.TaskArn),
+			ClusterARN:  aws.ToString(task.ClusterArn),
+			ClusterName: clusterName,
 		}
 
 		for _, container := range task.Containers {
 			t.Containers = append(t.Containers, Container{
-				Name:       aws.ToString(container.Name),
-				ARN:        aws.ToString(container.ContainerArn),
-				TaskARN:    aws.ToString(container.TaskArn),
-				ClusterARN: aws.ToString(task.ClusterArn),
-				RuntimeID:  aws.ToString(container.RuntimeId),
+				Name:        aws.ToString(container.Name),
+				ARN:         aws.ToString(container.ContainerArn),
+				TaskARN:     aws.ToString(container.TaskArn),
+				ClusterARN:  aws.ToString(task.ClusterArn),
+				ClusterName: clusterName,
+				RuntimeID:   aws.ToString(container.RuntimeId),
 			})
 		}
 		tasks = append(tasks, t)
@@ -185,6 +192,7 @@ func (c *AWSClient) DescribeContainer(cluster string, taskARN string, name strin
 	return Container{}, fmt.Errorf("no container with name '%s' in cluster '%s'", name, cluster)
 }
 
+// UpdateService calls the ecs.Client.UpdateService method.
 func (c *AWSClient) UpdateService(params *ecs.UpdateServiceInput) error {
 	_, err := c.ecsClient.UpdateService(c.ctx, params)
 	if err != nil {
@@ -193,10 +201,16 @@ func (c *AWSClient) UpdateService(params *ecs.UpdateServiceInput) error {
 	return nil
 }
 
+// ExecuteCommand calls the ecs.Client.ExecuteCommand method.
 func (c *AWSClient) ExecuteCommand(params *ecs.ExecuteCommandInput) (*ecs.ExecuteCommandOutput, error) {
 	output, err := c.ecsClient.ExecuteCommand(c.ctx, params)
 	if err != nil {
 		return &ecs.ExecuteCommandOutput{}, err
 	}
 	return output, nil
+}
+
+func (c *Container) ECSTarget() string {
+	taskId, _ := utils.Last(strings.Split(c.TaskARN, "/"))
+	return fmt.Sprintf(ecsTargetFormat, c.ClusterName, taskId, c.RuntimeID)
 }
