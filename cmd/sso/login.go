@@ -20,20 +20,3 @@ func NewCmdLogin(f *factory.Factory) *cobra.Command {
 
 	return cmd
 }
-
-/*// loginCmd represents the login command
-var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "Perform an SSO login",
-	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
-		profile, _ := awsConfig.GetProfile(awsProfile)
-		_, err := internal.SSOLogin(ctx, profile)
-		internal.CheckErr(err)
-	},
-}
-
-func init() {
-	credsCmd.AddCommand(loginCmd)
-}
-*/
