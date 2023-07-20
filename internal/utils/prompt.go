@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"text/template"
 
 	"github.com/chzyer/readline"
 	"github.com/lithammer/fuzzysearch/fuzzy"
@@ -34,20 +33,11 @@ type Prompt interface {
 
 type Prompter struct{}
 
-var funcMap = template.FuncMap{
-	"deref": func(i *string) string { return *i },
-}
-
 var ContainerTemplate = &promptui.SelectTemplates{
 	Label:    fmt.Sprintf("%s {{ .Name }}: ", promptui.IconInitial),
 	Active:   fmt.Sprintf("%s {{ .Name | underline }}", promptui.IconSelect),
 	Inactive: "  {{ .Name }}",
 	Selected: fmt.Sprintf(`{{ "%s" | green }} {{ .Name | faint }}`, promptui.IconGood),
-	FuncMap:  funcMap,
-}
-
-func init() {
-	mergeFuncMap(&funcMap, &promptui.FuncMap)
 }
 
 func (p Prompter) Select(label string, items []string) string {
@@ -110,11 +100,5 @@ func fuzzyStringSearch(itemsToSelect []string) func(input string, index int) boo
 			return true
 		}
 		return false
-	}
-}
-
-func mergeFuncMap(a *template.FuncMap, b *template.FuncMap) {
-	for k, v := range *b {
-		(*a)[k] = v
 	}
 }
