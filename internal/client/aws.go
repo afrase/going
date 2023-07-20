@@ -192,3 +192,11 @@ func (c *AWSClient) UpdateService(params *ecs.UpdateServiceInput) error {
 	}
 	return nil
 }
+
+func (c *AWSClient) ExecuteCommand(params *ecs.ExecuteCommandInput) (*ecs.ExecuteCommandOutput, error) {
+	output, err := c.ecsClient.ExecuteCommand(c.ctx, params)
+	if err != nil {
+		return &ecs.ExecuteCommandOutput{}, err
+	}
+	return output, nil
+}
