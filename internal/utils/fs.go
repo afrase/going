@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// UserHomeDir returns the home directory path of the current user by using
+// os.UserHomeDir() and user.Current() as fallback.
 func UserHomeDir() string {
 	home, _ := os.UserHomeDir()
 	if len(home) > 0 {
@@ -23,6 +25,9 @@ func UserHomeDir() string {
 	return home
 }
 
+// StoreCacheFile writes the provided object to a temporary cache file before
+// renaming it to the specified filename, returning any errors encountered
+// during this process.
 func StoreCacheFile(filename string, obj interface{}, fileMode os.FileMode) (err error) {
 	tmpFilename := filename + ".tmp-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	if err := writeCacheFile(tmpFilename, fileMode, obj); err != nil {

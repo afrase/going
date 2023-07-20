@@ -15,6 +15,7 @@ func Last[E any](s []E) (E, bool) {
 	return s[len(s)-1], true
 }
 
+// CheckErr if err is not nil then print the stderr and exist.
 func CheckErr(err interface{}) {
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
@@ -22,6 +23,8 @@ func CheckErr(err interface{}) {
 	}
 }
 
+// OpenUrlInBrowser open a URL in the default browser.
+// Only works on macOS right now.
 func OpenUrlInBrowser(url string) error {
 	fmt.Printf("Opening URL in default browser: %s\n", url)
 	err := exec.Command("open", url).Start()
