@@ -23,6 +23,7 @@ import (
 )
 
 type shellOptions struct {
+	// The command flags
 	ClusterInput   string
 	ServiceInput   string
 	ContainerInput string
@@ -109,24 +110,26 @@ func getTaskArn(f *factory.Factory) string {
 	t, err := opts.client.ListTasks(opts.ClusterInput, opts.ServiceInput)
 	utils.CheckErr(err)
 
-	if len(t) > 0 {
+	switch len(t) {
+	case 0:
+		yes := f.Prompt.YesNoPrompt("No tasks running. Start one")
+		if yes {
+			err = opts.client.UpdateService(&ecs.UpdateServiceInput{
+				Cluster:      aws.String(opts.ClusterInput),
+				Service:      aws.String(opts.ServiceInput),
+				DesiredCount: aws.Int32(1),
+			})
+			utils.CheckErr(err)
+			fmt.Println("Set desired count of service to 1. Could take a few minutes to start.")
+		}
+
+		os.Exit(1)
+		return "" // won't reach
+	case 1:
 		return t[0]
+	default:
+		return f.Prompt.Select("Multiple tasks running, please select one", t)
 	}
-
-	yes := f.Prompt.YesNoPrompt("No tasks running. Start one")
-	if yes {
-		err = opts.client.UpdateService(&ecs.UpdateServiceInput{
-			Cluster:      aws.String(opts.ClusterInput),
-			Service:      aws.String(opts.ServiceInput),
-			DesiredCount: aws.Int32(1),
-		})
-		utils.CheckErr(err)
-
-		fmt.Println("Set desired count of service to 1. Could take a few minutes to start.")
-	}
-
-	os.Exit(1)
-	return "" // won't reach
 }
 
 func getContainerDetails(f *factory.Factory, taskARN string) {
