@@ -28,8 +28,7 @@ type shellOptions struct {
 	ContainerInput string
 	UseSSM         bool
 
-	TargetContainer client.Container
-
+	target client.Container
 	client *client.AWSClient
 }
 
@@ -59,7 +58,7 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 			getContainerDetails(f, taskARN)
 
 			fmt.Printf("cluster: %s service: %s container: %s\n",
-				opts.ClusterInput, opts.ServiceInput, opts.TargetContainer.Name)
+				opts.target.ClusterName, opts.target.ServiceName, opts.target.Name)
 
 			yes := f.Prompt.YesNoPrompt("Connect to the above container")
 			if !yes {
@@ -74,9 +73,9 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.ClusterInput, "cluster", "c", "", "ECS cluster")
-	cmd.Flags().StringVarP(&opts.ServiceInput, "service", "s", "", "ECS service")
-	cmd.Flags().StringVarP(&opts.ContainerInput, "container", "r", "", "ECS container")
+	cmd.Flags().StringVarP(&opts.ClusterInput, "cluster", "c", "", "The cluster name")
+	cmd.Flags().StringVarP(&opts.ServiceInput, "service", "s", "", "The service name")
+	cmd.Flags().StringVarP(&opts.ContainerInput, "container", "r", "", "The container name")
 	cmd.Flags().BoolVar(&opts.UseSSM, "ssm", false, "Use SSM to get a shell")
 
 	return cmd
@@ -144,7 +143,7 @@ func getContainerDetails(f *factory.Factory, taskARN string) {
 		details = c
 	}
 
-	opts.TargetContainer = details
+	opts.target = details
 	opts.ContainerInput = details.Name
 }
 
@@ -159,7 +158,7 @@ func containerSearch(containers []client.Container) func(input string, index int
 }
 
 func getBasicShell(f *factory.Factory) {
-	target := opts.TargetContainer.ECSTarget()
+	target := opts.target.SSMTarget()
 	ssmClient := ssm.NewFromConfig(f.Config())
 	out, err := ssmClient.StartSession(f.Context, &ssm.StartSessionInput{Target: aws.String(target)})
 	utils.CheckErr(err)
@@ -182,9 +181,9 @@ func getBasicShell(f *factory.Factory) {
 
 func getShellUsingECS(f *factory.Factory) {
 	out, err := opts.client.ExecuteCommand(&ecs.ExecuteCommandInput{
-		Cluster:     aws.String(opts.TargetContainer.ClusterARN),
-		Container:   aws.String(opts.TargetContainer.Name),
-		Task:        aws.String(opts.TargetContainer.TaskARN),
+		Cluster:     aws.String(opts.target.ClusterARN),
+		Container:   aws.String(opts.target.Name),
+		Task:        aws.String(opts.target.TaskARN),
 		Command:     aws.String("/bin/bash"),
 		Interactive: true,
 	})
@@ -193,7 +192,7 @@ func getShellUsingECS(f *factory.Factory) {
 	ep, err := ssm.NewDefaultEndpointResolver().ResolveEndpoint(f.Config().Region, ssm.EndpointResolverOptions{})
 	utils.CheckErr(err)
 
-	target := opts.TargetContainer.ECSTarget()
+	target := opts.target.SSMTarget()
 	ssmSession := session.Session{
 		SessionId:   aws.ToString(out.Session.SessionId),
 		StreamUrl:   aws.ToString(out.Session.StreamUrl),

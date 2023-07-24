@@ -13,7 +13,7 @@ func NewCmdRoot() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "going",
-		Short: "A tool for working with AWS at LinkSquares",
+		Short: "A tool for working with AWS",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			f.Context = cmd.Context()
 			if f.ProfileName == "" {

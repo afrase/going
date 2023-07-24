@@ -11,7 +11,11 @@ import (
 	"going/internal/utils"
 )
 
-const ecsTargetFormat = "ecs:%s_%s_%s"
+const (
+	// The format for setting the Target of an ECS container in the SSM Session.
+	ecsTargetFormat    = "ecs:%s_%s_%s"
+	groupServicePrefix = "service:"
+)
 
 type AWSClient struct {
 	ctx       context.Context
@@ -32,6 +36,7 @@ type Task struct {
 	ARN         string
 	ClusterARN  string
 	ClusterName string
+	ServiceName string
 	Containers  []Container
 }
 
@@ -40,6 +45,7 @@ type Container struct {
 	ARN         string
 	ClusterARN  string
 	ClusterName string
+	ServiceName string
 	TaskARN     string
 	RuntimeID   string
 }
@@ -130,10 +136,14 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 	var tasks []Task
 	for _, task := range result.Tasks {
 		clusterName, _ := utils.Last(strings.Split(aws.ToString(task.ClusterArn), "/"))
+		// The Group appears to be the name of the service prefixed with "service:".
+		serviceName := strings.TrimPrefix(aws.ToString(task.Group), groupServicePrefix)
+
 		t := Task{
 			ARN:         aws.ToString(task.TaskArn),
 			ClusterARN:  aws.ToString(task.ClusterArn),
 			ClusterName: clusterName,
+			ServiceName: serviceName,
 		}
 
 		for _, container := range task.Containers {
@@ -143,6 +153,7 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 				TaskARN:     aws.ToString(container.TaskArn),
 				ClusterARN:  aws.ToString(task.ClusterArn),
 				ClusterName: clusterName,
+				ServiceName: serviceName,
 				RuntimeID:   aws.ToString(container.RuntimeId),
 			})
 		}
@@ -210,7 +221,12 @@ func (c *AWSClient) ExecuteCommand(params *ecs.ExecuteCommandInput) (*ecs.Execut
 	return output, nil
 }
 
-func (c *Container) ECSTarget() string {
+// SSMTarget returns a string that can be used by SSM to target this container.
+// The documentation for SSM sessions only ever shows the target being an
+// instance ID. By reading through the AWS CLI source I was able to find that
+// they call the session-manager-plugin using a special string format for the
+// target of a container.
+func (c *Container) SSMTarget() string {
 	taskId, _ := utils.Last(strings.Split(c.TaskARN, "/"))
 	return fmt.Sprintf(ecsTargetFormat, c.ClusterName, taskId, c.RuntimeID)
 }
