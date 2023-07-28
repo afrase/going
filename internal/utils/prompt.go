@@ -25,6 +25,8 @@ func (n *noBellStdout) Close() error {
 	return readline.Stdout.Close()
 }
 
+const selectItemSize = 10
+
 type Prompt interface {
 	Select(label string, items []string) (value string)
 	CustomSelect(label string, items interface{}, tmpl *promptui.SelectTemplates, searcher list.Searcher) (index int)
@@ -44,6 +46,7 @@ func (p Prompter) Select(label string, items []string) string {
 	prompt := promptui.Select{
 		Label:             label,
 		Items:             items,
+		Size:              selectItemSize,
 		Searcher:          fuzzyStringSearch(items),
 		StartInSearchMode: true,
 		Stdout:            &noBellStdout{},
@@ -59,6 +62,7 @@ func (p Prompter) CustomSelect(label string, items interface{}, tmpl *promptui.S
 	prompt := promptui.Select{
 		Label:             label,
 		Items:             items,
+		Size:              selectItemSize,
 		Templates:         tmpl,
 		Searcher:          searcher,
 		StartInSearchMode: true,
