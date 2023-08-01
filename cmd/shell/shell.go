@@ -10,6 +10,8 @@ import (
 	"github.com/aws/session-manager-plugin/src/datachannel"
 	"github.com/aws/session-manager-plugin/src/log"
 	"github.com/aws/session-manager-plugin/src/sessionmanagerplugin/session"
+	"github.com/manifoldco/promptui"
+
 	// import for side effect of registering the shell session
 	_ "github.com/aws/session-manager-plugin/src/sessionmanagerplugin/session/shellsession"
 	"github.com/google/uuid"
@@ -34,6 +36,13 @@ type shellOptions struct {
 }
 
 var opts = &shellOptions{}
+
+var containerPromptTemplate = &promptui.SelectTemplates{
+	Label:    fmt.Sprintf("%s {{ .Name }}: ", promptui.IconInitial),
+	Active:   fmt.Sprintf("%s {{ .Name | underline }}", promptui.IconSelect),
+	Inactive: "  {{ .Name }}",
+	Selected: fmt.Sprintf(`{{ "%s" | green }} {{ .Name | faint }}`, promptui.IconGood),
+}
 
 func NewCmdShell(f *factory.Factory) *cobra.Command {
 	cmd := &cobra.Command{
@@ -138,7 +147,7 @@ func getContainerDetails(f *factory.Factory, taskARN string) {
 	if opts.ContainerInput == "" {
 		containers, err := opts.client.DescribeContainers(opts.ClusterInput, taskARN)
 		utils.CheckErr(err)
-		i := f.Prompt.CustomSelect("Select a container", containers, utils.ContainerTemplate, containerSearch(containers))
+		i := f.Prompt.CustomSelect("Select a container", containers, containerPromptTemplate, containerSearch(containers))
 		details = containers[i]
 	} else {
 		c, err := opts.client.DescribeContainer(opts.ClusterInput, taskARN, opts.ContainerInput)

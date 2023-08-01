@@ -2,7 +2,6 @@ package utils
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/chzyer/readline"
@@ -34,13 +33,6 @@ type Prompt interface {
 }
 
 type Prompter struct{}
-
-var ContainerTemplate = &promptui.SelectTemplates{
-	Label:    fmt.Sprintf("%s {{ .Name }}: ", promptui.IconInitial),
-	Active:   fmt.Sprintf("%s {{ .Name | underline }}", promptui.IconSelect),
-	Inactive: "  {{ .Name }}",
-	Selected: fmt.Sprintf(`{{ "%s" | green }} {{ .Name | faint }}`, promptui.IconGood),
-}
 
 func (p Prompter) Select(label string, items []string) string {
 	prompt := promptui.Select{
