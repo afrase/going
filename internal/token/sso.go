@@ -51,14 +51,15 @@ func (s *SSOToken) Delete() error {
 }
 
 func Read(filename string) (SSOToken, error) {
-	fileBytes, err := os.ReadFile(filename)
+	// Probably should refactor this since the errors are just ignored.
+	t := SSOToken{filename: filename}
+	fileBytes, err := os.ReadFile(t.filename)
 	if err != nil {
-		return SSOToken{}, fmt.Errorf("failed to read cached SSO token file, %w", err)
+		return t, fmt.Errorf("failed to read cached SSO token file, %w", err)
 	}
 
-	t := SSOToken{filename: filename}
 	if err := json.Unmarshal(fileBytes, &t); err != nil {
-		return SSOToken{}, fmt.Errorf("failed to parse cached SSO token file, %w", err)
+		return t, fmt.Errorf("failed to parse cached SSO token file, %w", err)
 	}
 
 	return t, nil
