@@ -28,7 +28,11 @@ func UserHomeDir() string {
 // StoreCacheFile writes the provided object to a temporary cache file before
 // renaming it to the specified filename, returning any errors encountered
 // during this process.
-func StoreCacheFile(filename string, obj interface{}, fileMode os.FileMode) (err error) {
+func StoreCacheFile(filename string, obj interface{}, fileMode os.FileMode) error {
+	if len(filename) == 0 {
+		return fmt.Errorf("filename is blank")
+	}
+
 	tmpFilename := filename + ".tmp-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	if err := writeCacheFile(tmpFilename, fileMode, obj); err != nil {
 		return err
@@ -41,9 +45,9 @@ func StoreCacheFile(filename string, obj interface{}, fileMode os.FileMode) (err
 	return nil
 }
 
-func writeCacheFile(filename string, fileMode os.FileMode, obj interface{}) (err error) {
+func writeCacheFile(filename string, fileMode os.FileMode, obj interface{}) error {
 	var f *os.File
-	f, err = os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_RDWR, fileMode)
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_RDWR, fileMode)
 	if err != nil {
 		return fmt.Errorf("failed to create cached file %w", err)
 	}

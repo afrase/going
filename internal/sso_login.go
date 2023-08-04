@@ -109,16 +109,16 @@ func refreshToken(f *factory.Factory, client *ssooidc.Client, t *token.SSOToken)
 		return err
 	}
 
+	err = utils.OpenUrlInBrowser(aws.ToString(deviceAuth.VerificationUriComplete))
+	if err != nil {
+		return err
+	}
+
 	tokenInput := ssooidc.CreateTokenInput{
 		ClientId:     aws.String(t.ClientId),
 		ClientSecret: aws.String(t.ClientSecret),
 		GrantType:    aws.String(oidcTokenGrantType),
 		DeviceCode:   deviceAuth.DeviceCode,
-	}
-
-	err = utils.OpenUrlInBrowser(aws.ToString(deviceAuth.VerificationUriComplete))
-	if err != nil {
-		return err
 	}
 
 	fmt.Print("Waiting for authorization")
