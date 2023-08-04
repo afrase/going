@@ -21,7 +21,7 @@ type awsCreds struct {
 func NewCmdSSO(f *factory.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sso",
-		Short: "Get AWS SSO credentials",
+		Short: "Output the current AWS credentials",
 		Run: func(cmd *cobra.Command, args []string) {
 			c, err := f.Config().Credentials.Retrieve(f.Context)
 			utils.CheckErr(err)

@@ -86,7 +86,7 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 	cmd.Flags().StringVarP(&opts.ClusterInput, "cluster", "c", "", "The cluster name")
 	cmd.Flags().StringVarP(&opts.ServiceInput, "service", "s", "", "The service name")
 	cmd.Flags().StringVarP(&opts.ContainerInput, "container", "r", "", "The container name")
-	cmd.Flags().BoolVar(&opts.UseSSM, "ssm", false, "Use SSM to get a shell")
+	cmd.Flags().BoolVar(&opts.UseSSM, "ssm", false, "Use SSM directly to get a shell")
 
 	return cmd
 }
@@ -187,6 +187,9 @@ func getBasicShell(f *factory.Factory) {
 		TargetId:    target,
 		DataChannel: &datachannel.DataChannel{},
 	}
+
+	fmt.Println("Connecting with a basic `sh' shell. After connecting run `/bin/bash' to get a nicer shell.")
+	fmt.Println("Don't forget you will have to call `exit' twice to end the connection if you change to bash.")
 
 	utils.CheckErr(ssmSession.Execute(log.Logger(false, ssmSession.ClientId)))
 }
