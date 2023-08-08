@@ -48,6 +48,8 @@ type Container struct {
 	ServiceName string
 	TaskARN     string
 	RuntimeID   string
+
+	Health string
 }
 
 func New(ctx context.Context, cfg aws.Config) *AWSClient {
@@ -155,6 +157,7 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 				ClusterName: clusterName,
 				ServiceName: serviceName,
 				RuntimeID:   aws.ToString(container.RuntimeId),
+				Health:      string(container.HealthStatus),
 			})
 		}
 		tasks = append(tasks, t)

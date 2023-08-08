@@ -15,10 +15,19 @@ func Last[E any](s []E) (E, bool) {
 	return s[len(s)-1], true
 }
 
-// CheckErr if err is not nil then print the stderr and exist.
-func CheckErr(err interface{}) {
-	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "Error:", err)
+// CheckErr if msg is not nil then print the stderr and exit.
+func CheckErr(msg interface{}) {
+	if msg != nil {
+		switch t := msg.(type) {
+		case error:
+			if t.Error() == "^C" {
+				fmt.Println("Cancelled")
+			} else {
+				_, _ = fmt.Fprintln(os.Stderr, "Error:", msg)
+			}
+		default:
+			_, _ = fmt.Fprintln(os.Stderr, "Error:", msg)
+		}
 		os.Exit(1)
 	}
 }
