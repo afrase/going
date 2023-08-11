@@ -49,7 +49,8 @@ type Container struct {
 	TaskARN     string
 	RuntimeID   string
 
-	Health string
+	Health     string
+	LastStatus string
 }
 
 func New(ctx context.Context, cfg aws.Config) *AWSClient {
@@ -158,6 +159,7 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 				ServiceName: serviceName,
 				RuntimeID:   aws.ToString(container.RuntimeId),
 				Health:      string(container.HealthStatus),
+				LastStatus:  aws.ToString(container.LastStatus),
 			})
 		}
 		tasks = append(tasks, t)
@@ -229,7 +231,11 @@ func (c *AWSClient) ExecuteCommand(params *ecs.ExecuteCommandInput) (*ecs.Execut
 // instance ID. By reading through the AWS CLI source I was able to find that
 // they call the session-manager-plugin using a special string format for the
 // target of a container.
-func (c *Container) SSMTarget() string {
+func (c *Container) SSMTarget() (string, error) {
+	if c.RuntimeID == "" {
+		return "", fmt.Errorf("container has no runtime ID, it most likely is still starting")
+	}
+
 	taskId, _ := utils.Last(strings.Split(c.TaskARN, "/"))
-	return fmt.Sprintf(ecsTargetFormat, c.ClusterName, taskId, c.RuntimeID)
+	return fmt.Sprintf(ecsTargetFormat, c.ClusterName, taskId, c.RuntimeID), nil
 }

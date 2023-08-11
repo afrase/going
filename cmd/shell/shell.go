@@ -38,10 +38,12 @@ type shellOptions struct {
 var opts = &shellOptions{}
 
 var containerPromptTemplate = &promptui.SelectTemplates{
-	Label:    fmt.Sprintf("%s {{ .Name }}: ", promptui.IconInitial),
+	Label:    fmt.Sprintf("%s {{ . }}: ", promptui.IconInitial),
 	Active:   fmt.Sprintf("%s {{ .Name | underline }}", promptui.IconSelect),
 	Inactive: "  {{ .Name }}",
 	Selected: fmt.Sprintf(`{{ "%s" | green }} {{ .Name | faint }}`, promptui.IconGood),
+	Details: `{{ "Status:" | faint }} {{ .LastStatus }}
+{{ "Health:" | faint }} {{ .Health }}`,
 }
 
 func NewCmdShell(f *factory.Factory) *cobra.Command {
@@ -170,7 +172,9 @@ func containerSearch(containers []client.Container) func(input string, index int
 }
 
 func getBasicShell(f *factory.Factory) {
-	target := opts.target.SSMTarget()
+	target, err := opts.target.SSMTarget()
+	utils.CheckErr(err)
+
 	ssmClient := ssm.NewFromConfig(f.Config())
 	out, err := ssmClient.StartSession(f.Context, &ssm.StartSessionInput{Target: aws.String(target)})
 	utils.CheckErr(err)
@@ -195,6 +199,9 @@ func getBasicShell(f *factory.Factory) {
 }
 
 func getShellUsingECS(f *factory.Factory) {
+	target, err := opts.target.SSMTarget()
+	utils.CheckErr(err)
+
 	out, err := opts.client.ExecuteCommand(&ecs.ExecuteCommandInput{
 		Cluster:     aws.String(opts.target.ClusterARN),
 		Container:   aws.String(opts.target.Name),
@@ -207,7 +214,6 @@ func getShellUsingECS(f *factory.Factory) {
 	ep, err := ssm.NewDefaultEndpointResolver().ResolveEndpoint(f.Config().Region, ssm.EndpointResolverOptions{})
 	utils.CheckErr(err)
 
-	target := opts.target.SSMTarget()
 	ssmSession := session.Session{
 		SessionId:   aws.ToString(out.Session.SessionId),
 		StreamUrl:   aws.ToString(out.Session.StreamUrl),
