@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/credentials/ssocreds"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc/types"
@@ -25,11 +26,15 @@ func CheckSSOLogin(f *factory.Factory) error {
 		return nil
 	}
 
+	var httpError *http.ResponseError
 	var invalidToken *ssocreds.InvalidTokenError
 	if errors.As(err, &invalidToken) || (c.CanExpire && c.Expired()) {
-		t := getCacheToken(f)
-		client := ssooidc.NewFromConfig(f.Config())
+		t, err := getCacheToken(f)
+		if err != nil {
+			return err
+		}
 
+		client := ssooidc.NewFromConfig(f.Config())
 		if t.IsExpired() && t.RegistrationIsExpired() {
 			if err := registerDevice(f, client, &t); err != nil {
 				return err
@@ -46,6 +51,13 @@ func CheckSSOLogin(f *factory.Factory) error {
 		if err := t.Write(); err != nil {
 			return err
 		}
+	} else if errors.As(err, &httpError) {
+		// I'm not sure how to unwrap the error to check for the `UnauthorizedException` error.
+		// If the more generic http error occurs then just do a full login.
+		err = SSOLogin(f)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -53,7 +65,11 @@ func CheckSSOLogin(f *factory.Factory) error {
 
 // SSOLogin do a full SSO login
 func SSOLogin(f *factory.Factory) error {
-	t := getCacheToken(f)
+	t, err := getCacheToken(f)
+	if err != nil {
+		return err
+	}
+
 	client := ssooidc.NewFromConfig(f.Config())
 	if err := registerDevice(f, client, &t); err != nil {
 		return err
@@ -69,10 +85,12 @@ func SSOLogin(f *factory.Factory) error {
 	return nil
 }
 
-func getCacheToken(f *factory.Factory) token.SSOToken {
+func getCacheToken(f *factory.Factory) (token.SSOToken, error) {
 	// If this ever returns an error we have problems so just exit
 	cacheFile, err := token.Filename(f.SelectedProfile().SSOStartURL)
-	utils.CheckErr(err)
+	if err != nil {
+		return token.SSOToken{}, err
+	}
 
 	// Read will return an error if the file doesn't exist, or we failed to parse it.
 	// In either case we will just write a new token later.
@@ -80,7 +98,7 @@ func getCacheToken(f *factory.Factory) token.SSOToken {
 	// These should always be equal
 	t.StartUrl = f.SelectedProfile().SSOStartURL
 	t.Region = f.SelectedProfile().SSORegion
-	return t
+	return t, nil
 }
 
 func registerDevice(f *factory.Factory, client *ssooidc.Client, t *token.SSOToken) error {

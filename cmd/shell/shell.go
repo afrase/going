@@ -49,7 +49,7 @@ var containerPromptTemplate = &promptui.SelectTemplates{
 func NewCmdShell(f *factory.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "shell",
-		Short: "Open a shell on a node in ECS",
+		Short: "Open a shell to a container in ECS",
 		PreRun: func(cmd *cobra.Command, args []string) {
 			opts.client = client.New(f.Context, f.Config())
 		},
