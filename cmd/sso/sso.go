@@ -47,6 +47,7 @@ func NewCmdSSO(f *factory.Factory) *cobra.Command {
 
 	cmd.AddCommand(NewCmdLogin(f))
 	cmd.AddCommand(NewCmdLogout(f))
+	cmd.AddCommand(NewCmdReplace(f))
 
 	return cmd
 }

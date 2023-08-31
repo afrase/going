@@ -8,12 +8,13 @@ import (
 	"going/internal/factory"
 )
 
-func NewCmdRoot() *cobra.Command {
+func NewCmdRoot(version string) *cobra.Command {
 	f := factory.New()
 
 	cmd := &cobra.Command{
-		Use:   "going",
-		Short: "A tool for working with AWS",
+		Use:     "going",
+		Short:   "A tool for working with AWS",
+		Version: version,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			f.Context = cmd.Context()
 			if f.ProfileName == "" {
