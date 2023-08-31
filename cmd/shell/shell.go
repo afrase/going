@@ -74,7 +74,8 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 
 			yes := f.Prompt.YesNoPrompt("Connect to the above container")
 			if !yes {
-				return
+				// just returning seems to sometimes not restore the shells cursor, so exit.
+				os.Exit(0)
 			}
 
 			if opts.UseSSM {
