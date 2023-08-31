@@ -10,8 +10,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.37.5
 	github.com/aws/aws-sdk-go-v2/service/sso v1.13.5
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.5
-	github.com/aws/session-manager-plugin v0.0.0-20221012155945-c523002ee02c
-	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
+	github.com/aws/session-manager-plugin v0.0.0-20230808183647-dbfa0bfdb04b
+	github.com/chzyer/readline v1.5.1
 	github.com/google/uuid v1.3.1
 	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/manifoldco/promptui v0.9.0
