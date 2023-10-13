@@ -49,3 +49,4 @@ brews:
     repository:
       owner: afrase
       name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
