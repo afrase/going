@@ -22,7 +22,7 @@ type Factory struct {
 }
 
 func New() *Factory {
-	awsCfg, err := awsconfig.Read(awsconfig.Filename())
+	awsCfg, err := awsconfig.Read(&awsconfig.ConfigFileLoader{}, awsconfig.Filename())
 	utils.CheckErr(err)
 	f := &Factory{
 		Prompt:         utils.Prompter{},

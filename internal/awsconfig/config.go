@@ -26,30 +26,17 @@ type Profile struct {
 	SSORegion   string
 }
 
-func (c *Config) ProfileNames() []string {
-	var names []string
-	for _, profile := range c.Profiles {
-		names = append(names, profile.Name)
-	}
-	return names
+type FileLoader interface {
+	Load(string) (*ini.File, error)
 }
 
-func (c *Config) GetProfile(name string) (Profile, error) {
-	for _, profile := range c.Profiles {
-		if profile.Name == name {
-			return profile, nil
-		}
-	}
+type ConfigFileLoader struct{}
 
-	return Profile{}, fmt.Errorf("no profile named '%s'", name)
+func (c *ConfigFileLoader) Load(filename string) (*ini.File, error) {
+	return ini.Load(filename)
 }
 
-func Read(filename string) (Config, error) {
-	rawCfg, err := ini.Load(filename)
-	if err != nil {
-		return Config{}, err
-	}
-
+func NewConfig(rawCfg *ini.File) Config {
 	cfg := Config{file: rawCfg}
 	for _, section := range rawCfg.Sections() {
 		sName := section.Name()
@@ -66,7 +53,35 @@ func Read(filename string) (Config, error) {
 		})
 	}
 
+	return cfg
+}
+
+func Read(loader FileLoader, filename string) (Config, error) {
+	rawCfg, err := loader.Load(filename)
+	if err != nil {
+		return Config{}, err
+	}
+
+	cfg := NewConfig(rawCfg)
 	return cfg, nil
+}
+
+func (c *Config) ProfileNames() []string {
+	var names []string
+	for _, profile := range c.Profiles {
+		names = append(names, profile.Name)
+	}
+	return names
+}
+
+func (c *Config) GetProfile(name string) (Profile, error) {
+	for _, profile := range c.Profiles {
+		if profile.Name == name {
+			return profile, nil
+		}
+	}
+
+	return Profile{}, fmt.Errorf("no profile named '%s'", name)
 }
 
 func Filename() string {

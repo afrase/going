@@ -1,6 +1,7 @@
 package awsconfig
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -9,66 +10,6 @@ import (
 
 	"going/internal/utils"
 )
-
-func TestConfig_GetProfile(t *testing.T) {
-	type fields struct {
-		Profiles []Profile
-		file     *ini.File
-	}
-	type args struct {
-		name string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    Profile
-		wantErr bool
-	}{
-		{},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Config{
-				Profiles: tt.fields.Profiles,
-				file:     tt.fields.file,
-			}
-			got, err := c.GetProfile(tt.args.name)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetProfile() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetProfile() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestConfig_ProfileNames(t *testing.T) {
-	type fields struct {
-		Profiles []Profile
-		file     *ini.File
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   []string
-	}{
-		{},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Config{
-				Profiles: tt.fields.Profiles,
-				file:     tt.fields.file,
-			}
-			if got := c.ProfileNames(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ProfileNames() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 func TestFilename(t *testing.T) {
 	tests := []struct {
@@ -83,14 +24,84 @@ func TestFilename(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := Filename(); got != tt.want {
-				t.Errorf("Filename() = %v, want %v", got, tt.want)
+				t.Errorf("Filename() = %v, profiles %v", got, tt.want)
 			}
 		})
 	}
 }
 
+func TestNewConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		configBytes []byte
+		profiles    []Profile
+	}{
+		{
+			name: "basic profile with sso_region",
+			configBytes: []byte(`[profile test]
+sso_start_url = https://my-sso-url
+sso_region = us-east-1
+region = eu-west-1`),
+			profiles: []Profile{
+				{Name: "test", SSOStartURL: "https://my-sso-url", SSORegion: "us-east-1"},
+			},
+		},
+		{
+			name: "complex config",
+			configBytes: []byte(`region = eu-north-1
+[default]
+region = us-east-1
+[foo]
+sso_start_url = https://my-sso-url-foo
+[profile test profile]
+sso_start_url = https://my-sso-url-test
+sso_region = us-east-2
+[profile test2]
+sso_start_url = https://my-sso-url-test2
+region = us-west-2`),
+			profiles: []Profile{
+				{Name: "default", SSORegion: "us-east-1"},
+				{Name: "test profile", SSOStartURL: "https://my-sso-url-test", SSORegion: "us-east-2"},
+				{Name: "test2", SSOStartURL: "https://my-sso-url-test2", SSORegion: "us-west-2"},
+			},
+		},
+		{
+			name: "falls back to region when sso_region is missing",
+			configBytes: []byte(`[profile test]
+sso_start_url = https://my-sso-url
+region = us-east-1`),
+			profiles: []Profile{
+				{Name: "test", SSOStartURL: "https://my-sso-url", SSORegion: "us-east-1"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, _ := ini.Load(tt.configBytes)
+			result := NewConfig(cfg)
+			if !reflect.DeepEqual(result.Profiles, tt.profiles) {
+				t.Errorf("got=%+v, wanted=%+v", result.Profiles, tt.profiles)
+			}
+		})
+	}
+}
+
+type mockConfigFileLoader struct {
+	returnError bool
+}
+
+func (c *mockConfigFileLoader) Load(_ string) (*ini.File, error) {
+	if c.returnError {
+		return nil, fmt.Errorf("error loading")
+	} else {
+		return ini.Empty(), nil
+	}
+}
+
 func TestRead(t *testing.T) {
 	type args struct {
+		loader   FileLoader
 		filename string
 	}
 	tests := []struct {
@@ -99,16 +110,32 @@ func TestRead(t *testing.T) {
 		want    Config
 		wantErr bool
 	}{
-		{},
+		{
+			name: "returns the config",
+			args: args{
+				loader: &mockConfigFileLoader{returnError: false},
+			},
+			want:    Config{},
+			wantErr: false,
+		},
+		{
+			name: "returns the error when loading fails",
+			args: args{
+				loader: &mockConfigFileLoader{returnError: true},
+			},
+			want:    Config{},
+			wantErr: true,
+		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Read(tt.args.filename)
+			got, err := Read(tt.args.loader, tt.args.filename)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Read() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			if !reflect.DeepEqual(got.Profiles, tt.want.Profiles) {
 				t.Errorf("Read() got = %v, want %v", got, tt.want)
 			}
 		})
