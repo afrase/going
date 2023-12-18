@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 
 	"going/internal/utils"
 )
@@ -33,21 +34,23 @@ type Service struct {
 }
 
 type Task struct {
-	ARN         string
-	ClusterARN  string
-	ClusterName string
-	ServiceName string
-	Containers  []Container
+	ARN           string
+	DefinitionARN string
+	ClusterARN    string
+	ClusterName   string
+	ServiceName   string
+	Containers    []Container
 }
 
 type Container struct {
-	Name        string
-	ARN         string
-	ClusterARN  string
-	ClusterName string
-	ServiceName string
-	TaskARN     string
-	RuntimeID   string
+	Name              string
+	ARN               string
+	ClusterARN        string
+	ClusterName       string
+	ServiceName       string
+	TaskARN           string
+	TaskDefinitionARN string
+	RuntimeID         string
 
 	Health     string
 	LastStatus string
@@ -143,23 +146,25 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 		serviceName := strings.TrimPrefix(aws.ToString(task.Group), groupServicePrefix)
 
 		t := Task{
-			ARN:         aws.ToString(task.TaskArn),
-			ClusterARN:  aws.ToString(task.ClusterArn),
-			ClusterName: clusterName,
-			ServiceName: serviceName,
+			ARN:           aws.ToString(task.TaskArn),
+			ClusterARN:    aws.ToString(task.ClusterArn),
+			ClusterName:   clusterName,
+			ServiceName:   serviceName,
+			DefinitionARN: aws.ToString(task.TaskDefinitionArn),
 		}
 
 		for _, container := range task.Containers {
 			t.Containers = append(t.Containers, Container{
-				Name:        aws.ToString(container.Name),
-				ARN:         aws.ToString(container.ContainerArn),
-				TaskARN:     aws.ToString(container.TaskArn),
-				ClusterARN:  aws.ToString(task.ClusterArn),
-				ClusterName: clusterName,
-				ServiceName: serviceName,
-				RuntimeID:   aws.ToString(container.RuntimeId),
-				Health:      string(container.HealthStatus),
-				LastStatus:  aws.ToString(container.LastStatus),
+				Name:              aws.ToString(container.Name),
+				ARN:               aws.ToString(container.ContainerArn),
+				TaskARN:           aws.ToString(container.TaskArn),
+				TaskDefinitionARN: aws.ToString(task.TaskDefinitionArn),
+				ClusterARN:        aws.ToString(task.ClusterArn),
+				ClusterName:       clusterName,
+				ServiceName:       serviceName,
+				RuntimeID:         aws.ToString(container.RuntimeId),
+				Health:            string(container.HealthStatus),
+				LastStatus:        aws.ToString(container.LastStatus),
 			})
 		}
 		tasks = append(tasks, t)
@@ -180,6 +185,20 @@ func (c *AWSClient) DescribeTask(cluster string, taskARN string) (Task, error) {
 	}
 
 	return result[0], nil
+}
+
+func (c *AWSClient) DescribeTaskDefinition(definitionARN string) (*types.TaskDefinition, error) {
+	// c.ecsClient.ListTaskDefinitions(c.ctx, &ecs.ListTaskDefinitionsInput{})
+	// c.ecsClient.ListTaskDefinitionFamilies(c.ctx, &ecs.ListTaskDefinitionFamiliesInput{})
+	result, err := c.ecsClient.DescribeTaskDefinition(c.ctx, &ecs.DescribeTaskDefinitionInput{
+		TaskDefinition: aws.String(definitionARN),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.TaskDefinition, nil
 }
 
 // DescribeContainers get details about the containers for the given cluster and task ARN.
