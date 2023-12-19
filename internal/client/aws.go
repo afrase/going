@@ -3,9 +3,13 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 
@@ -21,6 +25,7 @@ const (
 type AWSClient struct {
 	ctx       context.Context
 	ecsClient *ecs.Client
+	logClient *cloudwatchlogs.Client
 }
 
 type Cluster struct {
@@ -56,10 +61,19 @@ type Container struct {
 	LastStatus string
 }
 
+type LogEvent struct {
+	ID            string
+	StreamName    string
+	Timestamp     time.Time
+	IngestionTime time.Time
+	Message       string
+}
+
 func New(ctx context.Context, cfg aws.Config) *AWSClient {
 	return &AWSClient{
 		ctx:       ctx,
 		ecsClient: ecs.NewFromConfig(cfg),
+		logClient: cloudwatchlogs.NewFromConfig(cfg),
 	}
 }
 
@@ -243,6 +257,61 @@ func (c *AWSClient) ExecuteCommand(params *ecs.ExecuteCommandInput) (*ecs.Execut
 		return &ecs.ExecuteCommandOutput{}, err
 	}
 	return output, nil
+}
+
+func (c *AWSClient) TailLogs(groupName string, streamPrefix string, startTime time.Time, eventHandler func(event LogEvent)) error {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	go func() {
+		<-sigChan
+		fmt.Println("\nCaught ctrl+c, quit!")
+		os.Exit(0)
+	}()
+
+	// TODO: Fix when the last set of events have the same timestamp.
+	// 		If the final pages last event has the same timestamp as N previous events then the last N events will keep
+	// 	    getting printed. We need to store all event IDs for a given timestamp then check those IDs.
+
+	filterInput := &cloudwatchlogs.FilterLogEventsInput{
+		LogGroupName: aws.String(groupName),
+		StartTime:    aws.Int64(startTime.UnixMilli()),
+	}
+	if streamPrefix != "" {
+		filterInput.LogStreamNamePrefix = aws.String(streamPrefix)
+	}
+
+	// Set the timestamp to now in case there are no events we don't try to send a negative start time.
+	lastEvent := LogEvent{Timestamp: time.Now(), ID: ""}
+	for {
+		pager := cloudwatchlogs.NewFilterLogEventsPaginator(c.logClient, filterInput)
+		for pager.HasMorePages() {
+			result, err := pager.NextPage(c.ctx)
+			if err != nil {
+				return err
+			}
+
+			for _, event := range result.Events {
+				currentEvent := LogEvent{
+					ID:            aws.ToString(event.EventId),
+					StreamName:    aws.ToString(event.LogStreamName),
+					Timestamp:     time.UnixMilli(aws.ToInt64(event.Timestamp)),
+					IngestionTime: time.UnixMilli(aws.ToInt64(event.IngestionTime)),
+					Message:       aws.ToString(event.Message),
+				}
+
+				if lastEvent.ID == currentEvent.ID {
+					continue
+				}
+
+				eventHandler(currentEvent)
+
+				lastEvent = currentEvent
+			}
+		}
+
+		startTime = lastEvent.Timestamp
+		time.Sleep(3 * time.Second)
+	}
 }
 
 // SSMTarget returns a string that can be used by SSM to target this container.

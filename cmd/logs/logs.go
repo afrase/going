@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"github.com/manifoldco/promptui"
@@ -22,9 +21,15 @@ type logOptions struct {
 	ClusterInput   string
 	ServiceInput   string
 	ContainerInput string
-	Hours          int
+	Minutes        int
 
+	target client.Container
 	client *client.AWSClient
+}
+
+type targetLogConfig struct {
+	GroupName    string
+	StreamPrefix string
 }
 
 var opts = &logOptions{}
@@ -57,31 +62,21 @@ func NewCmdLogs(f *factory.Factory) *cobra.Command {
 			}
 
 			taskARN := getTaskArn(f)
-			group, err := getLogGroup(f, taskARN)
+			logDetails, err := getLogGroup(f, taskARN)
 			utils.CheckErr(err)
 
-			logClient := cloudwatchlogs.NewFromConfig(f.Config())
-			pager := cloudwatchlogs.NewFilterLogEventsPaginator(logClient, &cloudwatchlogs.FilterLogEventsInput{
-				LogGroupName: aws.String(group),
-				StartTime:    aws.Int64(time.Now().Add(-time.Duration(opts.Hours) * time.Hour).UnixMilli()),
+			startTime := time.Now().Add(-time.Duration(opts.Minutes) * time.Minute)
+			fmt.Printf("Tailing logs for CloudWatch group \"%s\" with prefix \"%s\"\n\n",
+				logDetails.GroupName, logDetails.StreamPrefix)
+
+			err = opts.client.TailLogs(logDetails.GroupName, logDetails.StreamPrefix, startTime, func(e client.LogEvent) {
+				fmt.Printf("%s [%s] %s\n", e.StreamName, e.Timestamp, e.Message)
 			})
-
-			for pager.HasMorePages() {
-				result, err := pager.NextPage(f.Context)
-				utils.CheckErr(err)
-
-				for _, event := range result.Events {
-					fmt.Printf("%s [%s] %s\n",
-						aws.ToString(event.LogStreamName),
-						time.UnixMilli(aws.ToInt64(event.Timestamp)),
-						aws.ToString(event.Message))
-				}
-			}
-
+			utils.CheckErr(err)
 		},
 	}
 
-	cmd.Flags().IntVarP(&opts.Hours, "hours", "t", 1, "Number of hours back to filter logs")
+	cmd.Flags().IntVarP(&opts.Minutes, "minutes", "t", 30, "Number of minutes back to filter logs")
 	cmd.Flags().StringVarP(&opts.ClusterInput, "cluster", "c", "", "The cluster name")
 	cmd.Flags().StringVarP(&opts.ServiceInput, "service", "s", "", "The service name")
 	cmd.Flags().StringVarP(&opts.ContainerInput, "container", "r", "", "The container name")
@@ -139,8 +134,9 @@ func getTaskArn(f *factory.Factory) string {
 	}
 }
 
-func getLogGroup(f *factory.Factory, taskARN string) (string, error) {
+func getLogGroup(f *factory.Factory, taskARN string) (targetLogConfig, error) {
 	var details client.Container
+	var config targetLogConfig
 
 	if opts.ContainerInput == "" {
 		containers, err := opts.client.DescribeContainers(opts.ClusterInput, taskARN)
@@ -153,19 +149,27 @@ func getLogGroup(f *factory.Factory, taskARN string) (string, error) {
 		details = c
 	}
 
+	opts.target = details
+
 	definition, err := opts.client.DescribeTaskDefinition(details.TaskDefinitionARN)
 	utils.CheckErr(err)
+
 	for _, container := range definition.ContainerDefinitions {
 		if aws.ToString(container.Name) == details.Name {
-			for k, v := range container.LogConfiguration.Options {
-				if k == "awslogs-group" {
-					return v, nil
-				}
+			if group, ok := container.LogConfiguration.Options["awslogs-group"]; ok {
+				config.GroupName = group
+			} else {
+				// We have to have a log group
+				return config, fmt.Errorf("no log group found")
+			}
+
+			if prefix, ok := container.LogConfiguration.Options["awslogs-stream-prefix"]; ok {
+				config.StreamPrefix = prefix
 			}
 		}
 	}
 
-	return "", fmt.Errorf("no log group found")
+	return config, nil
 }
 
 func containerSearch(containers []client.Container) func(input string, index int) bool {
