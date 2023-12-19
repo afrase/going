@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.23.4
 	github.com/aws/aws-sdk-go-v2/config v1.25.10
 	github.com/aws/aws-sdk-go-v2/credentials v1.16.8
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.29.1
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.35.1
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.44.1
 	github.com/aws/aws-sdk-go-v2/service/sso v1.18.1

@@ -3,10 +3,15 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/service/ecs/types"
 
 	"going/internal/utils"
 )
@@ -20,6 +25,7 @@ const (
 type AWSClient struct {
 	ctx       context.Context
 	ecsClient *ecs.Client
+	logClient *cloudwatchlogs.Client
 }
 
 type Cluster struct {
@@ -33,30 +39,41 @@ type Service struct {
 }
 
 type Task struct {
-	ARN         string
-	ClusterARN  string
-	ClusterName string
-	ServiceName string
-	Containers  []Container
+	ARN           string
+	DefinitionARN string
+	ClusterARN    string
+	ClusterName   string
+	ServiceName   string
+	Containers    []Container
 }
 
 type Container struct {
-	Name        string
-	ARN         string
-	ClusterARN  string
-	ClusterName string
-	ServiceName string
-	TaskARN     string
-	RuntimeID   string
+	Name              string
+	ARN               string
+	ClusterARN        string
+	ClusterName       string
+	ServiceName       string
+	TaskARN           string
+	TaskDefinitionARN string
+	RuntimeID         string
 
 	Health     string
 	LastStatus string
+}
+
+type LogEvent struct {
+	ID            string
+	StreamName    string
+	Timestamp     time.Time
+	IngestionTime time.Time
+	Message       string
 }
 
 func New(ctx context.Context, cfg aws.Config) *AWSClient {
 	return &AWSClient{
 		ctx:       ctx,
 		ecsClient: ecs.NewFromConfig(cfg),
+		logClient: cloudwatchlogs.NewFromConfig(cfg),
 	}
 }
 
@@ -143,23 +160,25 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 		serviceName := strings.TrimPrefix(aws.ToString(task.Group), groupServicePrefix)
 
 		t := Task{
-			ARN:         aws.ToString(task.TaskArn),
-			ClusterARN:  aws.ToString(task.ClusterArn),
-			ClusterName: clusterName,
-			ServiceName: serviceName,
+			ARN:           aws.ToString(task.TaskArn),
+			ClusterARN:    aws.ToString(task.ClusterArn),
+			ClusterName:   clusterName,
+			ServiceName:   serviceName,
+			DefinitionARN: aws.ToString(task.TaskDefinitionArn),
 		}
 
 		for _, container := range task.Containers {
 			t.Containers = append(t.Containers, Container{
-				Name:        aws.ToString(container.Name),
-				ARN:         aws.ToString(container.ContainerArn),
-				TaskARN:     aws.ToString(container.TaskArn),
-				ClusterARN:  aws.ToString(task.ClusterArn),
-				ClusterName: clusterName,
-				ServiceName: serviceName,
-				RuntimeID:   aws.ToString(container.RuntimeId),
-				Health:      string(container.HealthStatus),
-				LastStatus:  aws.ToString(container.LastStatus),
+				Name:              aws.ToString(container.Name),
+				ARN:               aws.ToString(container.ContainerArn),
+				TaskARN:           aws.ToString(container.TaskArn),
+				TaskDefinitionARN: aws.ToString(task.TaskDefinitionArn),
+				ClusterARN:        aws.ToString(task.ClusterArn),
+				ClusterName:       clusterName,
+				ServiceName:       serviceName,
+				RuntimeID:         aws.ToString(container.RuntimeId),
+				Health:            string(container.HealthStatus),
+				LastStatus:        aws.ToString(container.LastStatus),
 			})
 		}
 		tasks = append(tasks, t)
@@ -180,6 +199,20 @@ func (c *AWSClient) DescribeTask(cluster string, taskARN string) (Task, error) {
 	}
 
 	return result[0], nil
+}
+
+func (c *AWSClient) DescribeTaskDefinition(definitionARN string) (*types.TaskDefinition, error) {
+	// c.ecsClient.ListTaskDefinitions(c.ctx, &ecs.ListTaskDefinitionsInput{})
+	// c.ecsClient.ListTaskDefinitionFamilies(c.ctx, &ecs.ListTaskDefinitionFamiliesInput{})
+	result, err := c.ecsClient.DescribeTaskDefinition(c.ctx, &ecs.DescribeTaskDefinitionInput{
+		TaskDefinition: aws.String(definitionARN),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.TaskDefinition, nil
 }
 
 // DescribeContainers get details about the containers for the given cluster and task ARN.
@@ -224,6 +257,68 @@ func (c *AWSClient) ExecuteCommand(params *ecs.ExecuteCommandInput) (*ecs.Execut
 		return &ecs.ExecuteCommandOutput{}, err
 	}
 	return output, nil
+}
+
+func (c *AWSClient) TailLogs(groupName string, streamPrefix string, startTime time.Time, eventHandler func(event LogEvent)) error {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	go func() {
+		<-sigChan
+		fmt.Println("\nCaught ctrl+c, quit!")
+		os.Exit(0)
+	}()
+
+	// Set the timestamp to now in case there are no events we don't try to send a negative start time.
+	lastEvent := LogEvent{Timestamp: time.Now(), ID: ""}
+	lastEventIDs := map[string]struct{}{}
+	for {
+		filterInput := &cloudwatchlogs.FilterLogEventsInput{
+			LogGroupName: aws.String(groupName),
+			StartTime:    aws.Int64(startTime.UnixMilli()),
+		}
+		if streamPrefix != "" {
+			filterInput.LogStreamNamePrefix = aws.String(streamPrefix)
+		}
+
+		pager := cloudwatchlogs.NewFilterLogEventsPaginator(c.logClient, filterInput)
+		for pager.HasMorePages() {
+			result, err := pager.NextPage(c.ctx)
+			if err != nil {
+				return err
+			}
+
+			for _, event := range result.Events {
+				currentEvent := LogEvent{
+					ID:            aws.ToString(event.EventId),
+					StreamName:    aws.ToString(event.LogStreamName),
+					Timestamp:     time.UnixMilli(aws.ToInt64(event.Timestamp)),
+					IngestionTime: time.UnixMilli(aws.ToInt64(event.IngestionTime)),
+					Message:       aws.ToString(event.Message),
+				}
+
+				if _, ok := lastEventIDs[currentEvent.ID]; ok {
+					continue
+				}
+
+				if currentEvent.Timestamp.Equal(lastEvent.Timestamp) {
+					lastEventIDs[currentEvent.ID] = struct{}{}
+				}
+
+				if currentEvent.Timestamp.After(lastEvent.Timestamp) {
+					lastEventIDs = map[string]struct{}{
+						currentEvent.ID: {},
+					}
+				}
+
+				eventHandler(currentEvent)
+
+				lastEvent = currentEvent
+			}
+		}
+
+		startTime = lastEvent.Timestamp
+		time.Sleep(3 * time.Second)
+	}
 }
 
 // SSMTarget returns a string that can be used by SSM to target this container.

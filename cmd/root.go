@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
+	"going/cmd/logs"
 	"going/cmd/shell"
 	"going/cmd/sso"
 	"going/internal/factory"
@@ -28,6 +29,7 @@ func NewCmdRoot(version string) *cobra.Command {
 
 	cmd.AddCommand(shell.NewCmdShell(f))
 	cmd.AddCommand(sso.NewCmdSSO(f))
+	cmd.AddCommand(logs.NewCmdLogs(f))
 
 	return cmd
 }
