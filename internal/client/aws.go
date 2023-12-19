@@ -268,12 +268,9 @@ func (c *AWSClient) TailLogs(groupName string, streamPrefix string, startTime ti
 		os.Exit(0)
 	}()
 
-	// TODO: Fix when the last set of events have the same timestamp.
-	// 		If the final pages last event has the same timestamp as N previous events then the last N events will keep
-	// 	    getting printed. We need to store all event IDs for a given timestamp then check those IDs.
-
 	// Set the timestamp to now in case there are no events we don't try to send a negative start time.
 	lastEvent := LogEvent{Timestamp: time.Now(), ID: ""}
+	lastEventIDs := map[string]struct{}{}
 	for {
 		filterInput := &cloudwatchlogs.FilterLogEventsInput{
 			LogGroupName: aws.String(groupName),
@@ -299,8 +296,18 @@ func (c *AWSClient) TailLogs(groupName string, streamPrefix string, startTime ti
 					Message:       aws.ToString(event.Message),
 				}
 
-				if lastEvent.ID == currentEvent.ID {
+				if _, ok := lastEventIDs[currentEvent.ID]; ok {
 					continue
+				}
+
+				if currentEvent.Timestamp.Equal(lastEvent.Timestamp) {
+					lastEventIDs[currentEvent.ID] = struct{}{}
+				}
+
+				if currentEvent.Timestamp.After(lastEvent.Timestamp) {
+					lastEventIDs = map[string]struct{}{
+						currentEvent.ID: {},
+					}
 				}
 
 				eventHandler(currentEvent)

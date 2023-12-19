@@ -39,6 +39,17 @@ Global Flags:
   -p, --profile string   The AWS profile to use
 ```
 
+## logs command
+
+This command lets you tail CloudWatch logs for a container.
+It uses the `awslogs-group` and `awslogs-stream-prefix` from the task definition to filter logs events which isn't perfect so YMMV.
+
+The `-t, --minutes` flag will specify how many minutes back from now to filter logs (default of 30).
+
+```shell
+going logs -t 90
+```
+
 ## sso command
 
 The `sso` command by itself will print the AWS `access_key`, `secret_key`, and `token` credentials.
