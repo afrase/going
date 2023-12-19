@@ -272,17 +272,17 @@ func (c *AWSClient) TailLogs(groupName string, streamPrefix string, startTime ti
 	// 		If the final pages last event has the same timestamp as N previous events then the last N events will keep
 	// 	    getting printed. We need to store all event IDs for a given timestamp then check those IDs.
 
-	filterInput := &cloudwatchlogs.FilterLogEventsInput{
-		LogGroupName: aws.String(groupName),
-		StartTime:    aws.Int64(startTime.UnixMilli()),
-	}
-	if streamPrefix != "" {
-		filterInput.LogStreamNamePrefix = aws.String(streamPrefix)
-	}
-
 	// Set the timestamp to now in case there are no events we don't try to send a negative start time.
 	lastEvent := LogEvent{Timestamp: time.Now(), ID: ""}
 	for {
+		filterInput := &cloudwatchlogs.FilterLogEventsInput{
+			LogGroupName: aws.String(groupName),
+			StartTime:    aws.Int64(startTime.UnixMilli()),
+		}
+		if streamPrefix != "" {
+			filterInput.LogStreamNamePrefix = aws.String(streamPrefix)
+		}
+
 		pager := cloudwatchlogs.NewFilterLogEventsPaginator(c.logClient, filterInput)
 		for pager.HasMorePages() {
 			result, err := pager.NextPage(c.ctx)
