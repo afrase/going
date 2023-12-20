@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
@@ -114,17 +113,7 @@ func getTaskArn(f *factory.Factory) string {
 
 	switch len(t) {
 	case 0:
-		yes := f.Prompt.YesNoPrompt("No tasks running. Start one")
-		if yes {
-			err = opts.client.UpdateService(&ecs.UpdateServiceInput{
-				Cluster:      aws.String(opts.ClusterInput),
-				Service:      aws.String(opts.ServiceInput),
-				DesiredCount: aws.Int32(1),
-			})
-			utils.CheckErr(err)
-			fmt.Println("Set desired count of service to 1. Could take a few minutes to start.")
-		}
-
+		fmt.Println("No tasks running. We need a task ARN to get a task definition to get the logging information.")
 		os.Exit(1)
 		return "" // won't reach
 	case 1:
@@ -156,6 +145,9 @@ func getLogGroup(f *factory.Factory, taskARN string) (targetLogConfig, error) {
 
 	for _, container := range definition.ContainerDefinitions {
 		if aws.ToString(container.Name) == details.Name {
+			if container.LogConfiguration == nil {
+				return config, fmt.Errorf("no log configuration found")
+			}
 			if group, ok := container.LogConfiguration.Options["awslogs-group"]; ok {
 				config.GroupName = group
 			} else {

@@ -202,8 +202,6 @@ func (c *AWSClient) DescribeTask(cluster string, taskARN string) (Task, error) {
 }
 
 func (c *AWSClient) DescribeTaskDefinition(definitionARN string) (*types.TaskDefinition, error) {
-	// c.ecsClient.ListTaskDefinitions(c.ctx, &ecs.ListTaskDefinitionsInput{})
-	// c.ecsClient.ListTaskDefinitionFamilies(c.ctx, &ecs.ListTaskDefinitionFamiliesInput{})
 	result, err := c.ecsClient.DescribeTaskDefinition(c.ctx, &ecs.DescribeTaskDefinitionInput{
 		TaskDefinition: aws.String(definitionARN),
 	})
@@ -270,6 +268,9 @@ func (c *AWSClient) TailLogs(groupName string, streamPrefix string, startTime ti
 
 	// Set the timestamp to now in case there are no events we don't try to send a negative start time.
 	lastEvent := LogEvent{Timestamp: time.Now(), ID: ""}
+	// This is for tracking events with the exact same timestamps.
+	// If multiple events have the same timestamp at the end of a paging loop it's possible to keep printing the same
+	// message over and over.
 	lastEventIDs := map[string]struct{}{}
 	for {
 		filterInput := &cloudwatchlogs.FilterLogEventsInput{
