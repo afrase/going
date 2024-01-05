@@ -57,8 +57,14 @@ type Container struct {
 	TaskDefinitionARN string
 	RuntimeID         string
 
-	Health     string
-	LastStatus string
+	ExecuteAgentRunning bool
+
+	Health      string
+	LastStatus  string
+	Image       string
+	ImageDigest string
+	CPU         string
+	Memory      string
 }
 
 type LogEvent struct {
@@ -168,17 +174,23 @@ func (c *AWSClient) DescribeTasks(cluster string, taskARNs ...string) ([]Task, e
 		}
 
 		for _, container := range task.Containers {
+			agentRunning := isCommandAgentRunning(container)
 			t.Containers = append(t.Containers, Container{
-				Name:              aws.ToString(container.Name),
-				ARN:               aws.ToString(container.ContainerArn),
-				TaskARN:           aws.ToString(container.TaskArn),
-				TaskDefinitionARN: aws.ToString(task.TaskDefinitionArn),
-				ClusterARN:        aws.ToString(task.ClusterArn),
-				ClusterName:       clusterName,
-				ServiceName:       serviceName,
-				RuntimeID:         aws.ToString(container.RuntimeId),
-				Health:            string(container.HealthStatus),
-				LastStatus:        aws.ToString(container.LastStatus),
+				Name:                aws.ToString(container.Name),
+				ARN:                 aws.ToString(container.ContainerArn),
+				TaskARN:             aws.ToString(container.TaskArn),
+				TaskDefinitionARN:   aws.ToString(task.TaskDefinitionArn),
+				ClusterARN:          aws.ToString(task.ClusterArn),
+				ClusterName:         clusterName,
+				ServiceName:         serviceName,
+				RuntimeID:           aws.ToString(container.RuntimeId),
+				ExecuteAgentRunning: agentRunning,
+				Health:              string(container.HealthStatus),
+				LastStatus:          aws.ToString(container.LastStatus),
+				Image:               aws.ToString(container.Image),
+				ImageDigest:         aws.ToString(container.ImageDigest),
+				CPU:                 aws.ToString(container.Cpu),
+				Memory:              aws.ToString(container.Memory),
 			})
 		}
 		tasks = append(tasks, t)
@@ -257,7 +269,11 @@ func (c *AWSClient) ExecuteCommand(params *ecs.ExecuteCommandInput) (*ecs.Execut
 	return output, nil
 }
 
+// TailLogs tails logs for a specified log group, starting from the specified
+// startTime, and invokes the eventHandler function for each log event received.
+// It continuously paginates
 func (c *AWSClient) TailLogs(groupName string, streamPrefix string, startTime time.Time, eventHandler func(event LogEvent)) error {
+	// Not really necessary but it makes the console look nice when exiting.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 	go func() {
@@ -334,4 +350,14 @@ func (c *Container) SSMTarget() (string, error) {
 
 	taskId, _ := utils.Last(strings.Split(c.TaskARN, "/"))
 	return fmt.Sprintf(ecsTargetFormat, c.ClusterName, taskId, c.RuntimeID), nil
+}
+
+// isCommandAgentRunning checks if the ExecuteCommandAgent managed agent is running in the given container.
+func isCommandAgentRunning(container types.Container) bool {
+	for _, agent := range container.ManagedAgents {
+		if agent.Name == types.ManagedAgentNameExecuteCommandAgent {
+			return aws.ToString(agent.LastStatus) == "RUNNING"
+		}
+	}
+	return false
 }

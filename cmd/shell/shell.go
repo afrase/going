@@ -43,7 +43,9 @@ var containerPromptTemplate = &promptui.SelectTemplates{
 	Inactive: "  {{ .Name }}",
 	Selected: fmt.Sprintf(`{{ "%s" | green }} {{ .Name | faint }}`, promptui.IconGood),
 	Details: `{{ "Status:" | faint }} {{ .LastStatus }}
-{{ "Health:" | faint }} {{ .Health }}`,
+{{ "Health:" | faint }} {{ .Health }}
+{{ "Image:" | faint }} {{ .Image }}
+{{ "ImageDigest:" | faint }} {{ .ImageDigest }}`,
 }
 
 func NewCmdShell(f *factory.Factory) *cobra.Command {
@@ -67,10 +69,15 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 			}
 
 			taskARN := getTaskArn(f)
-			getContainerDetails(f, taskARN)
+			opts.target = getContainerDetails(f, taskARN)
 
-			fmt.Printf("cluster: %s service: %s container: %s\n",
+			fmt.Printf("cluster: \"%s\" service: \"%s\" container: \"%s\"\n",
 				opts.target.ClusterName, opts.target.ServiceName, opts.target.Name)
+
+			if opts.target.ExecuteAgentRunning {
+				fmt.Println("AWS is reporting the \"ExecuteCommandAgent\" is not running, connection will use SSM directly.")
+				opts.UseSSM = true
+			}
 
 			yes := f.Prompt.YesNoPrompt("Connect to the above container")
 			if !yes {
@@ -144,7 +151,7 @@ func getTaskArn(f *factory.Factory) string {
 	}
 }
 
-func getContainerDetails(f *factory.Factory, taskARN string) {
+func getContainerDetails(f *factory.Factory, taskARN string) client.Container {
 	var details client.Container
 
 	if opts.ContainerInput == "" {
@@ -158,8 +165,8 @@ func getContainerDetails(f *factory.Factory, taskARN string) {
 		details = c
 	}
 
-	opts.target = details
 	opts.ContainerInput = details.Name
+	return details
 }
 
 func containerSearch(containers []client.Container) func(input string, index int) bool {
