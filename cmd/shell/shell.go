@@ -43,9 +43,7 @@ var containerPromptTemplate = &promptui.SelectTemplates{
 	Inactive: "  {{ .Name }}",
 	Selected: fmt.Sprintf(`{{ "%s" | green }} {{ .Name | faint }}`, promptui.IconGood),
 	Details: `{{ "Status:" | faint }} {{ .LastStatus }}
-{{ "Health:" | faint }} {{ .Health }}
-{{ "Image:" | faint }} {{ .Image }}
-{{ "ImageDigest:" | faint }} {{ .ImageDigest }}`,
+{{ "Health:" | faint }} {{ .Health }}`,
 }
 
 func NewCmdShell(f *factory.Factory) *cobra.Command {
