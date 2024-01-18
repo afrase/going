@@ -72,7 +72,7 @@ func NewCmdShell(f *factory.Factory) *cobra.Command {
 			fmt.Printf("cluster: \"%s\" service: \"%s\" container: \"%s\"\n",
 				opts.target.ClusterName, opts.target.ServiceName, opts.target.Name)
 
-			if opts.target.ExecuteAgentRunning {
+			if !opts.target.ExecuteAgentRunning {
 				fmt.Println("AWS is reporting the \"ExecuteCommandAgent\" is not running, connection will use SSM directly.")
 				opts.UseSSM = true
 			}
